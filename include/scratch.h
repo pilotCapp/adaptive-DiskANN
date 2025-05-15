@@ -32,6 +32,7 @@ template <typename T> class InMemQueryScratch : public AbstractScratch<T>
                       size_t alignment_factor, bool init_pq_scratch = false);
     void resize_for_new_L(uint32_t new_search_l);
     void clear();
+    void reset_temporaries();
 
     inline uint32_t get_L()
     {

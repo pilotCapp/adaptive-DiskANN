@@ -28,8 +28,6 @@ int main(int argc, char **argv)
     uint32_t num_threads, R, L, Lf, build_PQ_bytes;
     float alpha;
     bool use_pq_build, use_opq;
-    std::vector<uint32_t> partition_dims;
-
 
     po::options_description desc{
         program_options_utils::make_program_description("build_memory_index", "Build a memory-based DiskANN index.")};
@@ -72,10 +70,6 @@ int main(int argc, char **argv)
                                        program_options_utils::FILTERED_LBUILD);
         optional_configs.add_options()("label_type", po::value<std::string>(&label_type)->default_value("uint"),
                                        program_options_utils::LABEL_TYPE_DESCRIPTION);
-        optional_configs.add_options()("partition_dims", po::value<std::vector<uint32_t>>(&partition_dims)
-                                        ->multitoken()
-                                        ->default_value(std::vector<uint32_t>{0}, "0"),
-                                        program_options_utils::PARTITION_DIMS_TYPE_DESCRIPTION);
 
         // Merge required and optional parameters
         desc.add(required_configs).add(optional_configs);
@@ -125,13 +119,12 @@ int main(int argc, char **argv)
 
         size_t data_num, data_dim;
         diskann::get_bin_metadata(data_path, data_num, data_dim);
-
-        // If the partition_dims vector has a single element equal to 0, set it to the full dimension.
-        if (partition_dims.size() == 1 && partition_dims[0] == 0)
-        {
-            partition_dims[0] = data_dim;
-        }
         
+        // Use only the first 10% of the dimensions,(For testing purposes I am currently only creating indexes based on individual partitions)
+        //
+        // size_t effective_dim = 16;
+        // 
+            
         auto index_build_params = diskann::IndexWriteParametersBuilder(L, R)
                                       .with_filter_list_size(Lf)
                                       .with_alpha(alpha)
@@ -144,11 +137,9 @@ int main(int argc, char **argv)
                                  .with_label_file(label_file)
                                  .with_save_path_prefix(index_path_prefix)
                                  .build();
-
         auto config = diskann::IndexConfigBuilder()
                           .with_metric(metric)
                           .with_dimension(data_dim)
-                          .with_partitions(partition_dims)
                           .with_max_points(data_num)
                           .with_data_load_store_strategy(diskann::DataStoreStrategy::MEMORY)
                           .with_graph_load_store_strategy(diskann::GraphStoreStrategy::MEMORY)

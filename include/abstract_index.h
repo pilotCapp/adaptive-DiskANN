@@ -69,15 +69,22 @@ class AbstractIndex
     // can customize L on a per-query basis without tampering with "Parameters"
     // IDtype is either uint32_t or uint64_t
     template <typename data_type, typename IDType>
-    std::pair<uint32_t, uint32_t> search(const data_type *query, const size_t K, const uint32_t L, IDType *indices,
-                                         float *distances = nullptr);
+    // std::pair<uint32_t, uint32_t> search(const data_type *query, const size_t K, const uint32_t L, IDType *indices,
+    //                                      float *distances = nullptr);
+    std::tuple<unsigned int, std::array<unsigned int, 2>> search(const data_type *query, const size_t K,
+                                                                 const uint32_t L, IDType *indices,
+                                                                 float *distances = nullptr);
 
     // Filter support search
     // IndexType is either uint32_t or uint64_t
     template <typename IndexType>
-    std::pair<uint32_t, uint32_t> search_with_filters(const DataType &query, const std::string &raw_label,
-                                                      const size_t K, const uint32_t L, IndexType *indices,
-                                                      float *distances);
+    // std::pair<uint32_t, uint32_t> search_with_filters(const DataType &query, const std::string &raw_label,
+    //                                                   const size_t K, const uint32_t L, IndexType *indices,
+    //                                                   float *distances);
+    std::tuple<unsigned int, std::array<unsigned int, 2>> search_with_filters(const DataType &query,
+                                                                              const std::string &raw_label,
+                                                                              const size_t K, const uint32_t L,
+                                                                              IndexType *indices, float *distances);
 
     // insert points with labels, labels should be present for filtered index
     template <typename data_type, typename tag_type, typename label_type>
@@ -108,11 +115,21 @@ class AbstractIndex
 
   private:
     virtual void _build(const DataType &data, const size_t num_points_to_load, TagVector &tags) = 0;
-    virtual std::pair<uint32_t, uint32_t> _search(const DataType &query, const size_t K, const uint32_t L,
-                                                  std::any &indices, float *distances = nullptr) = 0;
-    virtual std::pair<uint32_t, uint32_t> _search_with_filters(const DataType &query, const std::string &filter_label,
-                                                               const size_t K, const uint32_t L, std::any &indices,
-                                                               float *distances) = 0;
+    // virtual std::pair<uint32_t, uint32_t> _search(const DataType &query, const size_t K, const uint32_t L,
+    //                                               std::any &indices, float *distances = nullptr) = 0;
+    virtual std::tuple<unsigned int, std::array<unsigned int, 2>> _search(const DataType &query, const size_t K,
+                                                                          const uint32_t L, std::any &indices,
+                                                                          float *distances = nullptr) = 0;
+
+    // virtual std::pair<uint32_t, uint32_t> _search_with_filters(const DataType &query, const std::string
+    // &filter_label,
+    //                                                            const size_t K, const uint32_t L, std::any &indices,
+    //                                                            float *distances) = 0;
+    virtual std::tuple<unsigned int, std::array<unsigned int, 2>> _search_with_filters(const DataType &query,
+                                                                                       const std::string &filter_label,
+                                                                                       const size_t K, const uint32_t L,
+                                                                                       std::any &indices,
+                                                                                       float *distances) = 0;
     virtual int _insert_point(const DataType &data_point, const TagType tag, Labelvector &labels) = 0;
     virtual int _insert_point(const DataType &data_point, const TagType tag) = 0;
     virtual int _lazy_delete(const TagType &tag) = 0;

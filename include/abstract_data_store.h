@@ -93,11 +93,40 @@ template <typename data_t> class AbstractDataStore
     virtual void get_distance(const data_t *preprocessed_query, const std::vector<location_t> &ids,
                               std::vector<float> &distances, AbstractScratch<data_t> *scratch_space) const = 0;
     virtual float get_distance(const location_t loc1, const location_t loc2) const = 0;
+    /// Adaptive version with default implementation:
+    virtual float get_distance_adaptive(const data_t *query, const location_t loc, uint32_t start_dim = 1,
+                                        uint32_t end_dim = 1) const
+    {
+        // Default behavior: ignore end_dim, call the standard version.
+        return get_distance(query, loc);
+    }
+    virtual void get_distance_adaptive(const data_t *query, const location_t *locations, const uint32_t location_count,
+                                       float *distances, AbstractScratch<data_t> *scratch_space = nullptr,
+                                       uint32_t start_dim = 1, uint32_t end_dim = 0) const
+    {
+        get_distance(query, locations, location_count, distances, scratch_space);
+    }
+    virtual void get_distance_adaptive(const data_t *preprocessed_query, const std::vector<location_t> &ids,
+                                       std::vector<float> &distances, AbstractScratch<data_t> *scratch_space,
+                                       uint32_t start_dim = 1, uint32_t end_dim = 0) const
+    {
+        get_distance(preprocessed_query, ids, distances, scratch_space);
+    };
+    virtual float get_distance_adaptive(const location_t loc1, const location_t loc2, uint32_t start_dim = 1,
+                                        uint32_t end_dim = 0) const
+    {
+        return get_distance(loc1, loc2);
+    }
 
     // stats of the data stored in store
     // Returns the point in the dataset that is closest to the mean of all points
     // in the dataset
     virtual location_t calculate_medoid() const = 0;
+    virtual location_t calculate_medoid_adaptive(uint32_t start_partition_dim) const
+    {
+        // Default behavior: ignore end_dim, call the standard version.
+        return calculate_medoid();
+    };
 
     // REFACTOR PQ TODO: Each data store knows about its distance function, so this is
     // redundant. However, we don't have an OptmizedDataStore yet, and to preserve code

@@ -52,11 +52,11 @@ class NeighborPriorityQueue
     // set item or it has a greated distance than the final
     // item in the set. The set cursor that is used to pop() the
     // next item will be set to the lowest index of an uncheck item
-    void insert(const Neighbor &nbr)
+    int insert(const Neighbor &nbr)
     {
         if (_size == _capacity && _data[_size - 1] < nbr)
         {
-            return;
+            return 0;
         }
 
         size_t lo = 0, hi = _size;
@@ -70,7 +70,7 @@ class NeighborPriorityQueue
             }
             else if (_data[mid].id == nbr.id)
             {
-                return;
+                return 0;
             }
             else
             {
@@ -91,6 +91,7 @@ class NeighborPriorityQueue
         {
             _cur = lo;
         }
+        return 1;
     }
 
     Neighbor closest_unexpanded()
@@ -142,6 +143,70 @@ class NeighborPriorityQueue
     {
         _size = 0;
         _cur = 0;
+    }
+
+    std::vector<uint32_t> get_candidate_ids() const
+    {
+        std::vector<uint32_t> ids;
+        ids.reserve(_size);
+        for (size_t i = 0; i < _size; i++)
+        {
+            ids.push_back(_data[i].id);
+        }
+        return ids;
+    }
+
+    std::uint32_t get_candidate_id(uint32_t index) const
+    {
+        return (_data[index].id);
+    }
+
+    // Update the distance of the neighbor at index `idx`.
+    void update_neighbor_distance_at_index(size_t idx, float new_distance)
+    {
+        // float totalSquared = _data[idx].distance * _data[idx].distance + new_distance * new_distance;
+        // _data[idx].distance = totalSquared;
+        // sqrt(totalSquared);
+        _data[idx].distance += new_distance;
+    }
+
+    // Re-sort the queue so that candidates are in increasing order of distance.
+    void sort_queue()
+    {
+        std::sort(_data.begin(), _data.begin() + _size,
+                  [](const Neighbor &a, const Neighbor &b) { return a.distance < b.distance; });
+    }
+    
+    void partition_queue(uint32_t new_size)
+    {
+        if (new_size < _size)
+        {
+            std::nth_element(_data.begin(), _data.begin() + new_size, _data.begin() + _size,
+                             [](const Neighbor &a, const Neighbor &b) { return a.distance < b.distance; });
+            _size = new_size;
+        }
+    }
+
+    void reset_cur()
+    {
+        _cur = 0;
+        while (_cur < _size && _data[_cur].expanded)
+        {
+            _cur++;
+        }
+    }
+
+    void prune_queue()
+    {
+        // Cut the queue in half by keeping only the first half.
+        size_t new_size = _size / 2;
+        _data.erase(_data.begin() + new_size, _data.begin() + _size);
+        _size = new_size;
+    }
+
+    void reset_size(uint32_t new_size)
+    {
+        _size = new_size;
     }
 
   private:

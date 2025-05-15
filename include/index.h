@@ -131,8 +131,9 @@ template <typename T, typename TagT = uint32_t, typename LabelT = uint32_t> clas
     // Added search overload that takes L as parameter, so that we
     // can customize L on a per-query basis without tampering with "Parameters"
     template <typename IDType>
-    DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> search(const T *query, const size_t K, const uint32_t L,
-                                                           IDType *indices, float *distances = nullptr);
+    DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> search(const T *query, const size_t K,
+                                                                                   const uint32_t L, IDType *indices,
+                                                                                   float *distances = nullptr);
 
     // Initialize space for res_vectors before calling.
     DISKANN_DLLEXPORT size_t search_with_tags(const T *query, const uint64_t K, const uint32_t L, TagT *tags,
@@ -141,9 +142,9 @@ template <typename T, typename TagT = uint32_t, typename LabelT = uint32_t> clas
 
     // Filter support search
     template <typename IndexType>
-    DISKANN_DLLEXPORT std::pair<uint32_t, uint32_t> search_with_filters(const T *query, const LabelT &filter_label,
-                                                                        const size_t K, const uint32_t L,
-                                                                        IndexType *indices, float *distances);
+    DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> search_with_filters(
+        const T *query, const LabelT &filter_label, const size_t K, const uint32_t L, IndexType *indices,
+        float *distances);
 
     // Will fail if tag already in the index or if tag=0.
     DISKANN_DLLEXPORT int insert_point(const T *point, const TagT tag);
@@ -204,12 +205,12 @@ template <typename T, typename TagT = uint32_t, typename LabelT = uint32_t> clas
     // overload of abstract index virtual methods
     virtual void _build(const DataType &data, const size_t num_points_to_load, TagVector &tags) override;
 
-    virtual std::pair<uint32_t, uint32_t> _search(const DataType &query, const size_t K, const uint32_t L,
-                                                  std::any &indices, float *distances = nullptr) override;
-    virtual std::pair<uint32_t, uint32_t> _search_with_filters(const DataType &query,
-                                                               const std::string &filter_label_raw, const size_t K,
-                                                               const uint32_t L, std::any &indices,
-                                                               float *distances) override;
+    virtual std::tuple<unsigned int, std::array<unsigned int, 2>> _search(const DataType &query, const size_t K,
+                                                                          const uint32_t L, std::any &indices,
+                                                                          float *distances = nullptr) override;
+    virtual std::tuple<unsigned int, std::array<unsigned int, 2>> _search_with_filters(
+        const DataType &query, const std::string &filter_label_raw, const size_t K, const uint32_t L, std::any &indices,
+        float *distances) override;
 
     virtual int _insert_point(const DataType &data_point, const TagType tag) override;
     virtual int _insert_point(const DataType &data_point, const TagType tag, Labelvector &labels) override;
@@ -256,9 +257,9 @@ template <typename T, typename TagT = uint32_t, typename LabelT = uint32_t> clas
     std::vector<uint32_t> get_init_ids();
 
     // The query to use is placed in scratch->aligned_query
-    std::pair<uint32_t, uint32_t> iterate_to_fixed_point(InMemQueryScratch<T> *scratch, const uint32_t Lindex,
-                                                         const std::vector<uint32_t> &init_ids, bool use_filter,
-                                                         const std::vector<LabelT> &filters, bool search_invocation);
+    std::tuple<uint32_t, std::array<uint32_t, 2>> iterate_to_fixed_point(
+        InMemQueryScratch<T> *scratch, const uint32_t Lindex, const std::vector<uint32_t> &init_ids, bool use_filter,
+        const std::vector<LabelT> &filters, bool search_invocation);
 
     void search_for_point_and_prune(int location, uint32_t Lindex, std::vector<uint32_t> &pruned_list,
                                     InMemQueryScratch<T> *scratch, bool use_filter = false,
@@ -348,6 +349,7 @@ template <typename T, typename TagT = uint32_t, typename LabelT = uint32_t> clas
     size_t _dim = 0;
     size_t _nd = 0;         // number of active points i.e. existing in the graph
     size_t _max_points = 0; // total number of points in given data set
+    std::vector<uint32_t> _partition_dims = {0};
 
     // _num_frozen_pts is the number of points which are used as initial
     // candidates when iterating to closest point(s). These are not visible

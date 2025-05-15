@@ -50,7 +50,7 @@ template <typename data_t> location_t InMemDataStore<data_t>::load_impl(AlignedF
 
     diskann::get_bin_metadata(reader, file_num_points, file_dim);
 
-    if (file_dim != this->_dim)
+    if (file_dim < this->_dim)
     {
         std::stringstream stream;
         stream << "ERROR: Driver requests loading " << this->_dim << " dimension,"
@@ -83,7 +83,7 @@ template <typename data_t> location_t InMemDataStore<data_t>::load_impl(const st
     }
     diskann::get_bin_metadata(filename, file_num_points, file_dim);
 
-    if (file_dim != this->_dim)
+    if (file_dim < this->_dim)
     {
         std::stringstream stream;
         stream << "ERROR: Driver requests loading " << this->_dim << " dimension,"
@@ -229,73 +229,6 @@ void InMemDataStore<data_t>::get_distance(const data_t *preprocessed_query, cons
     }
 }
 
-template <typename data_t>
-float InMemDataStore<data_t>::get_distance_adaptive(const data_t *query, const location_t loc, uint32_t start_dim,
-                                                    uint32_t end_dim) const
-{
-    if (end_dim == 0)
-    {
-        end_dim = this->_aligned_dim;
-    }
-
-    // return _distance_fn->compare(query, _data + _aligned_dim * loc, (uint32_t)_aligned_dim);
-    return _distance_fn->compare(query + start_dim, _data + _aligned_dim * loc + start_dim, end_dim - start_dim);
-}
-
-template <typename data_t>
-void InMemDataStore<data_t>::get_distance_adaptive(const data_t *query, const location_t *locations,
-                                                   const uint32_t location_count, float *distances,
-                                                   AbstractScratch<data_t> *scratch_space, uint32_t start_dim,
-                                                   uint32_t end_dim) const
-{
-    if (end_dim == 0)
-    {
-        end_dim = this->_aligned_dim;
-    }
-
-    for (location_t i = 0; i < location_count; i++)
-    {
-        // distances[i] = _distance_fn->compare(query, _data + locations[i] * _aligned_dim,
-        // (uint32_t)this->_aligned_dim);
-        distances[i] = _distance_fn->compare(query + start_dim, _data + locations[i] * _aligned_dim + start_dim,
-                                             end_dim - start_dim);
-    }
-}
-
-template <typename data_t>
-float InMemDataStore<data_t>::get_distance_adaptive(const location_t loc1, const location_t loc2, uint32_t start_dim,
-                                                    uint32_t end_dim) const
-{
-    if (end_dim == 0)
-    {
-        end_dim = this->_aligned_dim;
-    }
-    // return _distance_fn->compare(_data + loc1 * _aligned_dim, _data + loc2 * _aligned_dim,
-    //                              (uint32_t)this->_aligned_dim);
-    return _distance_fn->compare(_data + loc1 * _aligned_dim + start_dim, _data + loc2 * _aligned_dim + start_dim,
-                                 end_dim - start_dim);
-}
-
-template <typename data_t>
-void InMemDataStore<data_t>::get_distance_adaptive(const data_t *preprocessed_query, const std::vector<location_t> &ids,
-                                                   std::vector<float> &distances,
-                                                   AbstractScratch<data_t> *scratch_space, uint32_t start_dim,
-                                                   uint32_t end_dim) const
-{
-    if (end_dim == 0)
-    {
-        end_dim = this->_aligned_dim;
-    }
-
-    for (int i = 0; i < ids.size(); i++)
-    {
-        // distances[i] =
-        //     _distance_fn->compare(preprocessed_query, _data + ids[i] * _aligned_dim, (uint32_t)this->_aligned_dim);
-        distances[i] = _distance_fn->compare(preprocessed_query + start_dim, _data + ids[i] * _aligned_dim + start_dim,
-                                             end_dim - start_dim);
-    }
-}
-
 template <typename data_t> location_t InMemDataStore<data_t>::expand(const location_t new_size)
 {
     if (new_size == this->capacity())
@@ -403,58 +336,6 @@ void InMemDataStore<data_t>::copy_vectors(const location_t from_loc, const locat
     assert(to_loc < this->_capacity);
     assert(num_points < this->_capacity);
     memmove(_data + _aligned_dim * to_loc, _data + _aligned_dim * from_loc, num_points * _aligned_dim * sizeof(data_t));
-}
-
-template <typename data_t>
-location_t InMemDataStore<data_t>::calculate_medoid_adaptive(uint32_t start_partition_dim) const
-{
-    // allocate and init centroid
-    float *center = new float[start_partition_dim];
-    for (size_t j = 0; j < start_partition_dim; j++)
-        center[j] = 0;
-
-    for (size_t i = 0; i < this->capacity(); i++)
-        for (size_t j = 0; j < start_partition_dim; j++)
-            center[j] += (float)_data[i * _aligned_dim + j];
-
-    for (size_t j = 0; j < start_partition_dim; j++)
-        center[j] /= (float)this->capacity();
-
-    // compute all to one distance
-    float *distances = new float[this->capacity()];
-
-    // TODO: REFACTOR. Removing pragma might make this slow. Must revisit.
-    //  Problem is that we need to pass num_threads here, it is not clear
-    //  if data store must be aware of threads!
-    // #pragma omp parallel for schedule(static, 65536)
-    for (int64_t i = 0; i < (int64_t)this->capacity(); i++)
-    {
-        // extract point and distance reference
-        float &dist = distances[i];
-        const data_t *cur_vec = _data + (i * (size_t)_aligned_dim);
-        dist = 0;
-        float diff = 0;
-        for (size_t j = 0; j < start_partition_dim; j++)
-        {
-            diff = (center[j] - (float)cur_vec[j]) * (center[j] - (float)cur_vec[j]);
-            dist += diff;
-        }
-    }
-    // find imin
-    uint32_t min_idx = 0;
-    float min_dist = distances[0];
-    for (uint32_t i = 1; i < this->capacity(); i++)
-    {
-        if (distances[i] < min_dist)
-        {
-            min_idx = i;
-            min_dist = distances[i];
-        }
-    }
-
-    delete[] distances;
-    delete[] center;
-    return min_idx;
 }
 
 template <typename data_t> location_t InMemDataStore<data_t>::calculate_medoid() const

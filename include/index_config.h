@@ -22,6 +22,7 @@ struct IndexConfig
 
     Metric metric;
     size_t dimension;
+    std::vector<uint32_t> partition_dims;
     size_t max_points;
 
     bool dynamic_index;
@@ -44,13 +45,13 @@ struct IndexConfig
     std::shared_ptr<IndexSearchParams> index_search_params;
 
   private:
-    IndexConfig(DataStoreStrategy data_strategy, GraphStoreStrategy graph_strategy, Metric metric, size_t dimension,
+    IndexConfig(DataStoreStrategy data_strategy, GraphStoreStrategy graph_strategy, Metric metric, size_t dimension, std::vector<uint32_t> partitionDims,
                 size_t max_points, size_t num_pq_chunks, size_t num_frozen_points, bool dynamic_index, bool enable_tags,
                 bool pq_dist_build, bool concurrent_consolidate, bool use_opq, bool filtered_index,
                 std::string &data_type, const std::string &tag_type, const std::string &label_type,
                 std::shared_ptr<IndexWriteParameters> index_write_params,
                 std::shared_ptr<IndexSearchParams> index_search_params)
-        : data_strategy(data_strategy), graph_strategy(graph_strategy), metric(metric), dimension(dimension),
+        : data_strategy(data_strategy), graph_strategy(graph_strategy), metric(metric), dimension(dimension), partition_dims(partitionDims),
           max_points(max_points), dynamic_index(dynamic_index), enable_tags(enable_tags), pq_dist_build(pq_dist_build),
           concurrent_consolidate(concurrent_consolidate), use_opq(use_opq), filtered_index(filtered_index),
           num_pq_chunks(num_pq_chunks), num_frozen_pts(num_frozen_points), label_type(label_type), tag_type(tag_type),
@@ -89,6 +90,13 @@ class IndexConfigBuilder
         this->_dimension = dimension;
         return *this;
     }
+
+    IndexConfigBuilder &with_partitions(const std::vector<uint32_t>& partition_dims)
+    {
+        this->_partition_dims = partition_dims;
+        return *this;
+    }
+
 
     IndexConfigBuilder &with_max_points(size_t max_points)
     {
@@ -217,9 +225,24 @@ class IndexConfigBuilder
         {
             diskann::cout << "_num_frozen_pts passed as 0 for dynamic_index. Setting it to 1 for safety." << std::endl;
             _num_frozen_pts = 1;
+        }  
+
+        std::cout << "Partition dimensions: [ ";
+        for (auto d : _partition_dims)
+        {
+            std::cout << d << " ";
+        }
+        std::cout << "]" << std::endl;
+
+        if (_partition_dims.empty() ||
+            std::any_of(_partition_dims.begin(), _partition_dims.end(), [](uint32_t d) { return d == 0; }))
+        {
+            throw diskann::ANNException("Partition dimensions must be non-empty and contain no zero values.", -1, __FUNCSIG__, __FILE__, __LINE__);
         }
 
-        return IndexConfig(_data_strategy, _graph_strategy, _metric, _dimension, _max_points, _num_pq_chunks,
+
+
+        return IndexConfig(_data_strategy, _graph_strategy, _metric, _dimension, _partition_dims, _max_points, _num_pq_chunks,
                            _num_frozen_pts, _dynamic_index, _enable_tags, _pq_dist_build, _concurrent_consolidate,
                            _use_opq, _filtered_index, _data_type, _tag_type, _label_type, _index_write_params,
                            _index_search_params);
@@ -234,6 +257,7 @@ class IndexConfigBuilder
 
     Metric _metric;
     size_t _dimension;
+    std::vector<uint32_t> _partition_dims;
     size_t _max_points;
 
     bool _dynamic_index = false;

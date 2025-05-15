@@ -58,6 +58,28 @@ template <typename T> void InMemQueryScratch<T>::clear()
     _occlude_list_output.clear();
 }
 
+template <typename T> void InMemQueryScratch<T>::reset_temporaries()
+{
+    // Retain _pool, _best_l_nodes, and visited markers:
+    // _pool and _best_l_nodes remain intact.
+    // _inserted_into_pool_rs and _inserted_into_pool_bs are kept.
+
+    _occlude_factor.clear();
+    _id_scratch.clear();
+
+    _dist_scratch.clear();
+    _expanded_nghrs_vec.clear();
+    _occlude_list_output.clear();
+    _expanded_nodes_set.clear();
+
+    _inserted_into_pool_rs.clear();
+    _inserted_into_pool_bs->reset();
+
+    // Optionally, decide what to do with _expanded_nodes_set:
+    // If it is used to avoid re-expansion and you want to preserve that,
+    // do not clear it.
+}
+
 template <typename T> void InMemQueryScratch<T>::resize_for_new_L(uint32_t new_l)
 {
     if (new_l > _L)

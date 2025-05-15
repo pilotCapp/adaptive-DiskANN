@@ -56,7 +56,21 @@ template <typename data_t> class InMemDataStore : public AbstractDataStore<data_
     virtual void get_distance(const data_t *preprocessed_query, const std::vector<location_t> &ids,
                               std::vector<float> &distances, AbstractScratch<data_t> *scratch_space) const override;
 
+    virtual float get_distance_adaptive(const data_t *preprocessed_query, const location_t loc, uint32_t start_dim = 1,
+                                        uint32_t end_dim = 0) const override;
+    virtual float get_distance_adaptive(const location_t loc1, const location_t loc2, uint32_t start_dim = 1,
+                                        uint32_t end_dim = 0) const override;
+
+    virtual void get_distance_adaptive(const data_t *preprocessed_query, const location_t *locations,
+                                       const uint32_t location_count, float *distances,
+                                       AbstractScratch<data_t> *scratch, uint32_t start_dim = 1,
+                                       uint32_t end_dim = 0) const override;
+    virtual void get_distance_adaptive(const data_t *preprocessed_query, const std::vector<location_t> &ids,
+                                       std::vector<float> &distances, AbstractScratch<data_t> *scratch_space,
+                                       uint32_t start_dim = 1, uint32_t end_dim = 0) const override;
+
     virtual location_t calculate_medoid() const override;
+    virtual location_t calculate_medoid_adaptive(uint32_t start_partition_dim) const override;
 
     virtual Distance<data_t> *get_dist_fn() const override;
 

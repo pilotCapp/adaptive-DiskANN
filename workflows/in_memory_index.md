@@ -15,7 +15,9 @@ The arguments are as follows:
 7. **--alpha** (default is 1.2): A float value between 1.0 and 1.5 which determines the diameter of the graph, which will be approximately *log n* to the base alpha. Typical values are between 1 to 1.5. 1 will yield the sparsest graph, 1.5 will yield denser graphs. 
 8. **T (--num_threads)** (default is to get_omp_num_procs()): number of threads used by the index build process. Since the code is highly parallel, the  indexing time improves almost linearly with the number of threads (subject to the cores available on the machine and DRAM bandwidth).
 9. **--build_PQ_bytes** (default is 0): Set to a positive value less than the dimensionality of the data to enable faster index build with PQ based distance comparisons. Defaults to using full precision vectors for distance comparisons.
-10.**--use_opq**: use the flag to use OPQ rather than PQ compression. OPQ is more space efficient for some high dimensional datasets, but also needs a bit more build time.
+10. **--use_opq**: use the flag to use OPQ rather than PQ compression. OPQ is more space efficient for some high dimensional datasets, but also needs a bit more build time.
+
+11. **--partition_dims** (default is [16,45,85,128] for sift): The trained MRL partitions for adaptive index generation. Must align with the same partitions used during training, and the dimensionality of the dataset.
 
 
 To search the generated index, use the `apps/search_memory_index` program:
@@ -33,6 +35,8 @@ The arguments are as follows:
 7. **K**: search for *K* neighbors and measure *K*-recall@*K*, meaning the intersection between the retrieved top-*K* nearest neighbors and ground truth *K* nearest neighbors.
 8. **result_output_prefix**: search results will be stored in files, one per L value (see next arg), with specified prefix, in binary format.
 9. **-L (--search_list)**: A list of search_list sizes to perform search with. Larger parameters will result in slower latencies, but higher accuracies. Must be atleast the value of *K* in (7).
+
+10. **--partition_dims** (default is [16,45,85,128] for sift): The trained MRL partitions for adaptive index search. Must align with the same partitions used during training, and the dimensionality of the dataset.
 
 
 Example with BIGANN:

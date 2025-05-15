@@ -86,3 +86,21 @@
 
  ./apps/search_memory_index  --data_type float --dist_fn l2 --index_path_prefix data/sift/partitions/128/index_sift_base_R64_L100_A1.2 --query_file data/sift/partitions/128/query_base.fbin  --gt_file data/sift/sift_query_base_gt100 -K 10 -L 10 20 30 40 50 100 --result_path data/sift/res
  ```
+
+
+
+## ADAPTIVE
+### MRL
+```bash
+
+./apps/build_memory_index  --data_type float --dist_fn l2 --data_path data/sift/sift_base_learned.fbin --index_path_prefix data/sift/index_sift_mrl_R64_L100_A1.2 -R 64 -L 100 --alpha 1.2 --partition_dims 128
+
+./apps/search_memory_index  --data_type float --dist_fn l2 --index_path_prefix data/sift/index_sift_mrl_R64_L100_A1.2 --query_file data/sift/sift_query_learned.fbin  --gt_file data/sift/sift_query_learn_gt100 -K 10 -L 10 20 30 40 50 100 --result_path data/sift/res
+ ```
+
+## VANILLA
+```bash
+ ./apps/build_memory_index  --data_type float --dist_fn l2 --data_path data/sift/sift_base.fbin --index_path_prefix data/sift/index_sift_base_R64_L100_A1.2 -R 64 -L 100 --alpha 1.2
+
+./apps/search_memory_index  --data_type float --dist_fn l2 --index_path_prefix data/sift/index_sift_base_R64_L100_A1.2 --query_file data/sift/sift_query.fbin  --gt_file data/sift/sift_query_base_gt100 -K 10 -L 10 20 30 40 50 100 --result_path data/sift/res
+ ```

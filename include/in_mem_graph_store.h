@@ -12,7 +12,7 @@ class InMemGraphStore : public AbstractGraphStore
 {
   public:
     InMemGraphStore(const size_t total_pts, const size_t reserve_graph_degree);
-
+    
     // returns tuple of <nodes_read, start, num_frozen_points>
     virtual std::tuple<uint32_t, uint32_t, size_t> load(const std::string &index_path_prefix,
                                                         const size_t num_points) override;

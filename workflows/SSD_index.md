@@ -44,7 +44,7 @@ This example demonstrates the use of the commands above on a 100K slice of the [
 
 Download the base and query set and convert the data to binary format
 ```bash
-mkdir -p DiskANN/build/data && cd DiskANN/build/data
+mkdir -p build/data && cd build/data
 wget ftp://ftp.irisa.fr/local/texmex/corpus/sift.tar.gz
 tar -xf sift.tar.gz
 cd ..

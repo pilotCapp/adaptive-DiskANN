@@ -43,6 +43,8 @@ const char *FILTERS_FILE_DESCRIPTION =
 const char *LABEL_TYPE_DESCRIPTION =
     "Storage type of Labels {uint/uint32, ushort/uint16}, default value is uint which will consume memory 4 bytes per "
     "filter.  'uint' is an alias for 'uint32' and 'ushort' is an alias for 'uint16'.";
+const char *PARTITION_DIMS_TYPE_DESCRIPTION =
+    "Comma- or space-separated list of partition dimensions. Default value is a single 4 byte integer corresponding to the full-dimensionality for a regular search";
 const char *GROUND_TRUTH_FILE_DESCRIPTION =
     "ground truth file for the queryset"; // what's the format, what's the requirements? does it need to include an
                                           // entry for every item or just a small subset? I have so many questions about

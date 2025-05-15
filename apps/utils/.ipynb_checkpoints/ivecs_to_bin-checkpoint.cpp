@@ -33,7 +33,7 @@ int main(int argc, char **argv)
     size_t npts = fsize / ((ndims + 1) * sizeof(uint32_t));
     std::cout << "Dataset: #pts = " << npts << ", # dims = " << ndims << std::endl;
 
-    size_t blk_size = 131072;
+    size_t blk_size = npts;
     size_t nblks = ROUND_UP(npts, blk_size) / blk_size;
     std::cout << "# blks: " << nblks << std::endl;
     std::ofstream writer(argv[2], std::ios::binary);
