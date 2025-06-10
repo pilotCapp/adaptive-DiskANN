@@ -16,11 +16,10 @@ chmod +x embed-sentences-to-fvecs.py
 cd ../build
 
 4. Create bin files for generated dataset
+./apps/utils/fvecs_to_bin float data/sentence-transformers/paq/base.fvecs data/sentence-transformers/paq/base.fbin
 ./apps/utils/fvecs_to_bin float data/sentence-transformers/paq/query.fvecs data/sentence-transformers/paq/query.fbin
 
 ## Compute groundtruth
-
-./apps/utils/compute_groundtruth  --data_type float --dist_fn l2 --base_file data/sift/sift_mrl.fbin --query_file  data/sift/sift_query_mrl.fbin --gt_file data/sift/gt100 --K 100
 
 ./apps/utils/compute_groundtruth  --data_type float --dist_fn l2 --base_file data/sentence-transformers/paq/base.fbin --query_file  data/sentence-transformers/paq/query.fbin --gt_file data/sentence-transformers/paq/gt100 --K 100
 
