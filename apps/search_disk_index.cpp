@@ -251,6 +251,7 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
                     use_reorder_data, stats + i);
             }
         }
+
         auto e = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = e - s;
         double qps = (1.0 * query_num) / (1.0 * diff.count());

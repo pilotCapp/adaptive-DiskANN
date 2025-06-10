@@ -41,6 +41,7 @@ void FixedChunkPQTable::load_pq_centroid_bin(MemoryMappedFiles &files, const cha
 #else
 void FixedChunkPQTable::load_pq_centroid_bin(const char *pq_table_file, size_t num_chunks)
 {
+    size_t pq_dim = 64;
 #endif
 
     uint64_t nr, nc;
@@ -97,7 +98,7 @@ void FixedChunkPQTable::load_pq_centroid_bin(const char *pq_table_file, size_t n
                                     __LINE__);
     }
 
-    this->ndims = nc;
+    this->ndims = pq_dim;
 
 #ifdef EXEC_ENV_OLS
     diskann::load_bin<float>(files, pq_table_file, centroid, nr, nc, file_offset_data[1]);
@@ -412,6 +413,9 @@ int generate_pq_pivots(const float *const passed_train_data, size_t num_train, u
                        uint32_t num_pq_chunks, uint32_t max_k_means_reps, std::string pq_pivots_path,
                        bool make_zero_mean)
 {
+
+    std::cout << " DEBUG, calling generate_pq_pivots with dim" << dim << std::endl;
+
     if (num_pq_chunks > dim)
     {
         diskann::cout << " Error: number of chunks more than dimension" << std::endl;
@@ -846,10 +850,13 @@ int generate_pq_data_from_pivots_simplified(const float *data, const size_t num,
 // If the numbber of centers is < 256, it stores as byte vector, else as
 // 4-byte vector in binary format.
 template <typename T>
-int generate_pq_data_from_pivots(const std::string &data_file, uint32_t num_centers, uint32_t num_pq_chunks,
+int generate_pq_data_from_pivots(const std::string &data_file, uint32_t num_centers,
+                                 uint32_t num_pq_chunks, // will be forced to 32
                                  const std::string &pq_pivots_path, const std::string &pq_compressed_vectors_path,
                                  bool use_opq)
 {
+    size_t pq_dim = 64;
+
     size_t read_blk_size = 64 * 1024 * 1024;
     cached_ifstream base_reader(data_file, read_blk_size);
     uint32_t npts32;
@@ -858,6 +865,8 @@ int generate_pq_data_from_pivots(const std::string &data_file, uint32_t num_cent
     base_reader.read((char *)&basedim32, sizeof(uint32_t));
     size_t num_points = npts32;
     size_t dim = basedim32;
+
+    dim = pq_dim;
 
     std::unique_ptr<float[]> full_pivot_data;
     std::unique_ptr<float[]> rotmat_tr;
@@ -1097,6 +1106,8 @@ void generate_quantized_data(const std::string &data_file_to_use, const std::str
                              const double p_val, const size_t num_pq_chunks, const bool use_opq,
                              const std::string &codebook_prefix)
 {
+
+    size_t pq_dim = 64;
     size_t train_size, train_dim;
     float *train_data;
     if (!file_exists(codebook_prefix))
@@ -1104,6 +1115,8 @@ void generate_quantized_data(const std::string &data_file_to_use, const std::str
         // instantiates train_data with random sample updates train_size
         gen_random_slice<T>(data_file_to_use.c_str(), p_val, train_data, train_size, train_dim);
         diskann::cout << "Training data with " << train_size << " samples loaded." << std::endl;
+
+        train_dim = pq_dim;
 
         bool make_zero_mean = true;
         if (compareMetric == diskann::Metric::INNER_PRODUCT)

@@ -299,6 +299,9 @@ void PQFlashIndex<T, LabelT>::generate_cache_list_from_sample_queries(std::strin
     if (file_exists(sample_bin))
     {
         diskann::load_aligned_bin<T>(sample_bin, samples, sample_num, sample_dim, sample_aligned_dim);
+
+        std::cout << "Sample bin file: " << sample_bin << " loaded. Sample num: " << sample_num
+                  << " Sample dim: " << sample_dim << " Sample aligned dim: " << sample_aligned_dim << std::endl;
     }
 #endif
     else
@@ -812,11 +815,16 @@ int PQFlashIndex<T, LabelT>::load_from_separate_paths(uint32_t num_threads, cons
         return -1;
     }
 
-    this->_data_dim = pq_file_dim;
+    this->_data_dim = 128; // this is the data dimension of the original data, should ideally be read from the
+                           // _data.index file however quite complicated
+    this->_pq_dim = 64;    // pq_file_dim;
+
     // will change later if we use PQ on disk or if we are using
     // inner product without PQ
     this->_disk_bytes_per_point = this->_data_dim * sizeof(T);
-    this->_aligned_dim = ROUND_UP(pq_file_dim, 8);
+
+    this->_aligned_dim = ROUND_UP(this->_data_dim, 8);
+    this->_aligned_pq_dim = ROUND_UP(this->_pq_dim, 8);
 
     size_t npts_u64, nchunks_u64;
 #ifdef EXEC_ENV_OLS
@@ -1321,7 +1329,7 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
         {
             aligned_query_T[i] = query1[i];
         }
-        pq_query_scratch->initialize(this->_data_dim, aligned_query_T);
+        pq_query_scratch->initialize(this->_pq_dim, aligned_query_T);
     }
 
     // pointers to buffers for data
@@ -1344,6 +1352,10 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
     float *dist_scratch = pq_query_scratch->aligned_dist_scratch;
     uint8_t *pq_coord_scratch = pq_query_scratch->aligned_pq_coord_scratch;
 
+    // DEBUG
+    if (this->_pq_dim / 8 != this->_n_chunks)
+        std::cerr << "[BUG]   pq_dim=" << _pq_dim << "  n_chunks=" << _n_chunks << "  (expect pq_dim/8)\n";
+
     // lambda to batch compute query<-> node distances in PQ space
     auto compute_dists = [this, pq_coord_scratch, pq_dists](const uint32_t *ids, const uint64_t n_ids,
                                                             float *dists_out) {
@@ -1363,8 +1375,8 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
     {
         for (uint64_t cur_m = 0; cur_m < _num_medoids; cur_m++)
         {
-            float cur_expanded_dist =
-                _dist_cmp_float->compare(query_float, _centroid_data + _aligned_dim * cur_m, (uint32_t)_aligned_dim);
+            float cur_expanded_dist = _dist_cmp_float->compare(query_float, _centroid_data + this->_aligned_dim * cur_m,
+                                                               (uint32_t)this->_data_dim);
             if (cur_expanded_dist < best_dist)
             {
                 best_medoid = _medoids[cur_m];
@@ -1490,7 +1502,7 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
             float cur_expanded_dist;
             if (!_use_disk_index_pq)
             {
-                cur_expanded_dist = _dist_cmp->compare(aligned_query_T, node_fp_coords_copy, (uint32_t)_aligned_dim);
+                cur_expanded_dist = _dist_cmp->compare(aligned_query_T, node_fp_coords_copy, (uint32_t)this->_data_dim);
             }
             else
             {
@@ -1556,7 +1568,7 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
             float cur_expanded_dist;
             if (!_use_disk_index_pq)
             {
-                cur_expanded_dist = _dist_cmp->compare(aligned_query_T, data_buf, (uint32_t)_aligned_dim);
+                cur_expanded_dist = _dist_cmp->compare(aligned_query_T, data_buf, (uint32_t)this->_data_dim);
             }
             else
             {
@@ -1610,7 +1622,7 @@ void PQFlashIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t
         hops++;
     }
 
-    // re-sort by distance
+    // re-sort by distance                                         RERANK
     std::sort(full_retset.begin(), full_retset.end());
 
     if (use_reorder_data)

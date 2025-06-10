@@ -134,6 +134,7 @@ Index<T, TagT, LabelT>::Index(Metric m, const size_t dim, const size_t max_point
               .is_use_opq(use_opq)
               .is_filtered(filtered_index)
               .with_data_type(diskann_type_to_name<T>())
+              .with_partitions({128}) //Default partition size for disk testing
               .build(),
           IndexFactory::construct_datastore<T>(DataStoreStrategy::MEMORY,
                                                (max_points == 0 ? (size_t)1 : max_points) +
@@ -1085,6 +1086,7 @@ std::tuple<uint32_t, std::array<uint32_t, 2>> Index<T, TagT, LabelT>::iterate_to
     uint32_t hops1 = 0;
     uint32_t hops2 = 0;
     uint32_t comps = 0;
+    uint32_t reads = 0;
 
     // Initialize the candidate pool with starting points
     for (auto id : init_ids)
@@ -1143,7 +1145,8 @@ std::tuple<uint32_t, std::array<uint32_t, 2>> Index<T, TagT, LabelT>::iterate_to
 
             increment_dim_flag = false;
 
-            for (uint32_t i = 0; i < best_L_nodes.size(); i++)
+#pragma omp parallel for schedule(dynamic, 1)                  // TODO: verify this works. (static)?
+            for (uint32_t i = 0; i < best_L_nodes.size(); i++) // should be done parallelly
             {
                 float distance;
                 uint32_t id = best_L_nodes.get_candidate_id(i);
@@ -1170,7 +1173,13 @@ std::tuple<uint32_t, std::array<uint32_t, 2>> Index<T, TagT, LabelT>::iterate_to
                 distance = distances[0];
                 best_L_nodes.update_neighbor_distance_at_index(i, distance);
             }
+
+            best_L_nodes.partition_queue(10);
             best_L_nodes.sort_queue();
+            // best_L_nodes.prune_queue(2);
+            std::array<uint32_t, 2> hops = {hops1, hops2};
+
+            return std::make_tuple(comps, hops);
             best_L_nodes.reset_cur();
         }
 
@@ -1275,20 +1284,25 @@ std::tuple<uint32_t, std::array<uint32_t, 2>> Index<T, TagT, LabelT>::iterate_to
         {
             alteration_count += best_L_nodes.insert(Neighbor(id_scratch[m], dist_scratch[m]));
         }
+        reads += alteration_count;
 
         // if (static_cast<float>(alteration_count) / (id_scratch.size() + 1) <= threshold)
-        if (alteration_count <= 1)
+        //     if (alteration_count <= 1)
+        //     {
+        //         increment_counter++;
+        //         if (increment_counter >= 1)
+        //         {
+        //             increment_dim_flag = true;
+        //             increment_counter = 0;
+        //         }
+        //     }
+        //     else
+        //     {
+        //         increment_counter = 0;
+        //     }
+        if (best_L_nodes.get_cur() >= static_cast<int>(best_L_nodes.get_size() / 2))
         {
-            increment_counter++;
-            if (increment_counter >= 2)
-            {
-                increment_dim_flag = true;
-                increment_counter = 0;
-            }
-        }
-        else
-        {
-            increment_counter = 0;
+            increment_dim_flag = true;
         }
     }
     std::array<uint32_t, 2> hops = {hops1, hops2};
@@ -1492,6 +1506,7 @@ void Index<T, TagT, LabelT>::prune_neighbors(const uint32_t location, std::vecto
     // REFACTOR PQ: TODO: How to get rid of this!?
     if (_pq_dist)
     {
+        std::cout << "Pruning using partition 0" << std::endl;
         for (auto &ngh : pool)
             ngh.distance = _data_store->get_distance_adaptive(ngh.id, location, 0, _partition_dims[0]);
     }
@@ -2245,8 +2260,10 @@ void Index<T, TagT, LabelT>::build_filtered_index(const char *filename, const st
 }
 
 template <typename T, typename TagT, typename LabelT>
-std::tuple<unsigned int, std::array<unsigned int, 2>> Index<T, TagT, LabelT>::_search(const DataType &query, const size_t K, const uint32_t L,
-                                                              std::any &indices, float *distances)
+std::tuple<unsigned int, std::array<unsigned int, 2>> Index<T, TagT, LabelT>::_search(const DataType &query,
+                                                                                      const size_t K, const uint32_t L,
+                                                                                      std::any &indices,
+                                                                                      float *distances)
 {
     try
     {
@@ -2341,10 +2358,9 @@ std::tuple<unsigned int, std::array<unsigned int, 2>> Index<T, TagT, LabelT>::se
 }
 
 template <typename T, typename TagT, typename LabelT>
-std::tuple<unsigned int, std::array<unsigned int, 2>> Index<T, TagT, LabelT>::_search_with_filters(const DataType &query,
-                                                                           const std::string &raw_label, const size_t K,
-                                                                           const uint32_t L, std::any &indices,
-                                                                           float *distances)
+std::tuple<unsigned int, std::array<unsigned int, 2>> Index<T, TagT, LabelT>::_search_with_filters(
+    const DataType &query, const std::string &raw_label, const size_t K, const uint32_t L, std::any &indices,
+    float *distances)
 {
     auto converted_label = this->get_converted_label(raw_label);
     if (typeid(uint64_t *) == indices.type())
@@ -2365,9 +2381,8 @@ std::tuple<unsigned int, std::array<unsigned int, 2>> Index<T, TagT, LabelT>::_s
 
 template <typename T, typename TagT, typename LabelT>
 template <typename IdType>
-std::tuple<unsigned int, std::array<unsigned int, 2>> Index<T, TagT, LabelT>::search_with_filters(const T *query, const LabelT &filter_label,
-                                                                          const size_t K, const uint32_t L,
-                                                                          IdType *indices, float *distances)
+std::tuple<unsigned int, std::array<unsigned int, 2>> Index<T, TagT, LabelT>::search_with_filters(
+    const T *query, const LabelT &filter_label, const size_t K, const uint32_t L, IdType *indices, float *distances)
 {
     if (K > (uint64_t)L)
     {
@@ -3677,133 +3692,181 @@ template DISKANN_DLLEXPORT class Index<float, tag_uint128, uint16_t>;
 template DISKANN_DLLEXPORT class Index<int8_t, tag_uint128, uint16_t>;
 template DISKANN_DLLEXPORT class Index<uint8_t, tag_uint128, uint16_t>;
 
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint64_t, uint32_t>::search<uint64_t>(
-    const float *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint64_t, uint32_t>::search<uint32_t>(
-    const float *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint64_t, uint32_t>::search<uint64_t>(
-    const uint8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint64_t, uint32_t>::search<uint32_t>(
-    const uint8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint64_t, uint32_t>::search<uint64_t>(
-    const int8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint64_t, uint32_t>::search<uint32_t>(
-    const int8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint64_t, uint32_t>::search<uint64_t>(const float *query, const size_t K, const uint32_t L,
+                                                 uint64_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint64_t, uint32_t>::search<uint32_t>(const float *query, const size_t K, const uint32_t L,
+                                                 uint32_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint64_t, uint32_t>::search<uint64_t>(const uint8_t *query, const size_t K, const uint32_t L,
+                                                   uint64_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint64_t, uint32_t>::search<uint32_t>(const uint8_t *query, const size_t K, const uint32_t L,
+                                                   uint32_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint64_t, uint32_t>::search<uint64_t>(const int8_t *query, const size_t K, const uint32_t L,
+                                                  uint64_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint64_t, uint32_t>::search<uint32_t>(const int8_t *query, const size_t K, const uint32_t L,
+                                                  uint32_t *indices, float *distances);
 // TagT==uint32_t
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint32_t, uint32_t>::search<uint64_t>(
-    const float *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint32_t, uint32_t>::search<uint32_t>(
-    const float *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint32_t, uint32_t>::search<uint64_t>(
-    const uint8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint32_t, uint32_t>::search<uint32_t>(
-    const uint8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint32_t, uint32_t>::search<uint64_t>(
-    const int8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint32_t, uint32_t>::search<uint32_t>(
-    const int8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint32_t, uint32_t>::search<uint64_t>(const float *query, const size_t K, const uint32_t L,
+                                                 uint64_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint32_t, uint32_t>::search<uint32_t>(const float *query, const size_t K, const uint32_t L,
+                                                 uint32_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint32_t, uint32_t>::search<uint64_t>(const uint8_t *query, const size_t K, const uint32_t L,
+                                                   uint64_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint32_t, uint32_t>::search<uint32_t>(const uint8_t *query, const size_t K, const uint32_t L,
+                                                   uint32_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint32_t, uint32_t>::search<uint64_t>(const int8_t *query, const size_t K, const uint32_t L,
+                                                  uint64_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint32_t, uint32_t>::search<uint32_t>(const int8_t *query, const size_t K, const uint32_t L,
+                                                  uint32_t *indices, float *distances);
 
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint64_t, uint32_t>::search_with_filters<
-    uint64_t>(const float *query, const uint32_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint64_t, uint32_t>::search_with_filters<
-    uint32_t>(const float *query, const uint32_t &filter_label, const size_t K, const uint32_t L, uint32_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint64_t, uint32_t>::search_with_filters<
-    uint64_t>(const uint8_t *query, const uint32_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint64_t, uint32_t>::search_with_filters<
-    uint32_t>(const uint8_t *query, const uint32_t &filter_label, const size_t K, const uint32_t L, uint32_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint64_t, uint32_t>::search_with_filters<
-    uint64_t>(const int8_t *query, const uint32_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint64_t, uint32_t>::search_with_filters<
-    uint32_t>(const int8_t *query, const uint32_t &filter_label, const size_t K, const uint32_t L, uint32_t *indices,
-              float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint64_t, uint32_t>::search_with_filters<uint64_t>(const float *query, const uint32_t &filter_label,
+                                                              const size_t K, const uint32_t L, uint64_t *indices,
+                                                              float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint64_t, uint32_t>::search_with_filters<uint32_t>(const float *query, const uint32_t &filter_label,
+                                                              const size_t K, const uint32_t L, uint32_t *indices,
+                                                              float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint64_t, uint32_t>::search_with_filters<uint64_t>(const uint8_t *query, const uint32_t &filter_label,
+                                                                const size_t K, const uint32_t L, uint64_t *indices,
+                                                                float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint64_t, uint32_t>::search_with_filters<uint32_t>(const uint8_t *query, const uint32_t &filter_label,
+                                                                const size_t K, const uint32_t L, uint32_t *indices,
+                                                                float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint64_t, uint32_t>::search_with_filters<uint64_t>(const int8_t *query, const uint32_t &filter_label,
+                                                               const size_t K, const uint32_t L, uint64_t *indices,
+                                                               float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint64_t, uint32_t>::search_with_filters<uint32_t>(const int8_t *query, const uint32_t &filter_label,
+                                                               const size_t K, const uint32_t L, uint32_t *indices,
+                                                               float *distances);
 // TagT==uint32_t
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint32_t, uint32_t>::search_with_filters<
-    uint64_t>(const float *query, const uint32_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint32_t, uint32_t>::search_with_filters<
-    uint32_t>(const float *query, const uint32_t &filter_label, const size_t K, const uint32_t L, uint32_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint32_t, uint32_t>::search_with_filters<
-    uint64_t>(const uint8_t *query, const uint32_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint32_t, uint32_t>::search_with_filters<
-    uint32_t>(const uint8_t *query, const uint32_t &filter_label, const size_t K, const uint32_t L, uint32_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint32_t, uint32_t>::search_with_filters<
-    uint64_t>(const int8_t *query, const uint32_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint32_t, uint32_t>::search_with_filters<
-    uint32_t>(const int8_t *query, const uint32_t &filter_label, const size_t K, const uint32_t L, uint32_t *indices,
-              float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint32_t, uint32_t>::search_with_filters<uint64_t>(const float *query, const uint32_t &filter_label,
+                                                              const size_t K, const uint32_t L, uint64_t *indices,
+                                                              float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint32_t, uint32_t>::search_with_filters<uint32_t>(const float *query, const uint32_t &filter_label,
+                                                              const size_t K, const uint32_t L, uint32_t *indices,
+                                                              float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint32_t, uint32_t>::search_with_filters<uint64_t>(const uint8_t *query, const uint32_t &filter_label,
+                                                                const size_t K, const uint32_t L, uint64_t *indices,
+                                                                float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint32_t, uint32_t>::search_with_filters<uint32_t>(const uint8_t *query, const uint32_t &filter_label,
+                                                                const size_t K, const uint32_t L, uint32_t *indices,
+                                                                float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint32_t, uint32_t>::search_with_filters<uint64_t>(const int8_t *query, const uint32_t &filter_label,
+                                                               const size_t K, const uint32_t L, uint64_t *indices,
+                                                               float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint32_t, uint32_t>::search_with_filters<uint32_t>(const int8_t *query, const uint32_t &filter_label,
+                                                               const size_t K, const uint32_t L, uint32_t *indices,
+                                                               float *distances);
 
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint64_t, uint16_t>::search<uint64_t>(
-    const float *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint64_t, uint16_t>::search<uint32_t>(
-    const float *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint64_t, uint16_t>::search<uint64_t>(
-    const uint8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint64_t, uint16_t>::search<uint32_t>(
-    const uint8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint64_t, uint16_t>::search<uint64_t>(
-    const int8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint64_t, uint16_t>::search<uint32_t>(
-    const int8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint64_t, uint16_t>::search<uint64_t>(const float *query, const size_t K, const uint32_t L,
+                                                 uint64_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint64_t, uint16_t>::search<uint32_t>(const float *query, const size_t K, const uint32_t L,
+                                                 uint32_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint64_t, uint16_t>::search<uint64_t>(const uint8_t *query, const size_t K, const uint32_t L,
+                                                   uint64_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint64_t, uint16_t>::search<uint32_t>(const uint8_t *query, const size_t K, const uint32_t L,
+                                                   uint32_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint64_t, uint16_t>::search<uint64_t>(const int8_t *query, const size_t K, const uint32_t L,
+                                                  uint64_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint64_t, uint16_t>::search<uint32_t>(const int8_t *query, const size_t K, const uint32_t L,
+                                                  uint32_t *indices, float *distances);
 // TagT==uint32_t
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint32_t, uint16_t>::search<uint64_t>(
-    const float *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint32_t, uint16_t>::search<uint32_t>(
-    const float *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint32_t, uint16_t>::search<uint64_t>(
-    const uint8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint32_t, uint16_t>::search<uint32_t>(
-    const uint8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint32_t, uint16_t>::search<uint64_t>(
-    const int8_t *query, const size_t K, const uint32_t L, uint64_t *indices, float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint32_t, uint16_t>::search<uint32_t>(
-    const int8_t *query, const size_t K, const uint32_t L, uint32_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint32_t, uint16_t>::search<uint64_t>(const float *query, const size_t K, const uint32_t L,
+                                                 uint64_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint32_t, uint16_t>::search<uint32_t>(const float *query, const size_t K, const uint32_t L,
+                                                 uint32_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint32_t, uint16_t>::search<uint64_t>(const uint8_t *query, const size_t K, const uint32_t L,
+                                                   uint64_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint32_t, uint16_t>::search<uint32_t>(const uint8_t *query, const size_t K, const uint32_t L,
+                                                   uint32_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint32_t, uint16_t>::search<uint64_t>(const int8_t *query, const size_t K, const uint32_t L,
+                                                  uint64_t *indices, float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint32_t, uint16_t>::search<uint32_t>(const int8_t *query, const size_t K, const uint32_t L,
+                                                  uint32_t *indices, float *distances);
 
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint64_t, uint16_t>::search_with_filters<
-    uint64_t>(const float *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint64_t, uint16_t>::search_with_filters<
-    uint32_t>(const float *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint32_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint64_t, uint16_t>::search_with_filters<
-    uint64_t>(const uint8_t *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint64_t, uint16_t>::search_with_filters<
-    uint32_t>(const uint8_t *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint32_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint64_t, uint16_t>::search_with_filters<
-    uint64_t>(const int8_t *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint64_t, uint16_t>::search_with_filters<
-    uint32_t>(const int8_t *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint32_t *indices,
-              float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint64_t, uint16_t>::search_with_filters<uint64_t>(const float *query, const uint16_t &filter_label,
+                                                              const size_t K, const uint32_t L, uint64_t *indices,
+                                                              float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint64_t, uint16_t>::search_with_filters<uint32_t>(const float *query, const uint16_t &filter_label,
+                                                              const size_t K, const uint32_t L, uint32_t *indices,
+                                                              float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint64_t, uint16_t>::search_with_filters<uint64_t>(const uint8_t *query, const uint16_t &filter_label,
+                                                                const size_t K, const uint32_t L, uint64_t *indices,
+                                                                float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint64_t, uint16_t>::search_with_filters<uint32_t>(const uint8_t *query, const uint16_t &filter_label,
+                                                                const size_t K, const uint32_t L, uint32_t *indices,
+                                                                float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint64_t, uint16_t>::search_with_filters<uint64_t>(const int8_t *query, const uint16_t &filter_label,
+                                                               const size_t K, const uint32_t L, uint64_t *indices,
+                                                               float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint64_t, uint16_t>::search_with_filters<uint32_t>(const int8_t *query, const uint16_t &filter_label,
+                                                               const size_t K, const uint32_t L, uint32_t *indices,
+                                                               float *distances);
 // TagT==uint32_t
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint32_t, uint16_t>::search_with_filters<
-    uint64_t>(const float *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<float, uint32_t, uint16_t>::search_with_filters<
-    uint32_t>(const float *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint32_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint32_t, uint16_t>::search_with_filters<
-    uint64_t>(const uint8_t *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<uint8_t, uint32_t, uint16_t>::search_with_filters<
-    uint32_t>(const uint8_t *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint32_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint32_t, uint16_t>::search_with_filters<
-    uint64_t>(const int8_t *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint64_t *indices,
-              float *distances);
-template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<int8_t, uint32_t, uint16_t>::search_with_filters<
-    uint32_t>(const int8_t *query, const uint16_t &filter_label, const size_t K, const uint32_t L, uint32_t *indices,
-              float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint32_t, uint16_t>::search_with_filters<uint64_t>(const float *query, const uint16_t &filter_label,
+                                                              const size_t K, const uint32_t L, uint64_t *indices,
+                                                              float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    float, uint32_t, uint16_t>::search_with_filters<uint32_t>(const float *query, const uint16_t &filter_label,
+                                                              const size_t K, const uint32_t L, uint32_t *indices,
+                                                              float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint32_t, uint16_t>::search_with_filters<uint64_t>(const uint8_t *query, const uint16_t &filter_label,
+                                                                const size_t K, const uint32_t L, uint64_t *indices,
+                                                                float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    uint8_t, uint32_t, uint16_t>::search_with_filters<uint32_t>(const uint8_t *query, const uint16_t &filter_label,
+                                                                const size_t K, const uint32_t L, uint32_t *indices,
+                                                                float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint32_t, uint16_t>::search_with_filters<uint64_t>(const int8_t *query, const uint16_t &filter_label,
+                                                               const size_t K, const uint32_t L, uint64_t *indices,
+                                                               float *distances);
+template DISKANN_DLLEXPORT std::tuple<unsigned int, std::array<unsigned int, 2>> Index<
+    int8_t, uint32_t, uint16_t>::search_with_filters<uint32_t>(const int8_t *query, const uint16_t &filter_label,
+                                                               const size_t K, const uint32_t L, uint32_t *indices,
+                                                               float *distances);
 
 } // namespace diskann
 

@@ -176,15 +176,13 @@ class NeighborPriorityQueue
         std::sort(_data.begin(), _data.begin() + _size,
                   [](const Neighbor &a, const Neighbor &b) { return a.distance < b.distance; });
     }
-    
-    void partition_queue(uint32_t new_size)
+
+    void partition_queue(size_t top_k)
     {
-        if (new_size < _size)
-        {
-            std::nth_element(_data.begin(), _data.begin() + new_size, _data.begin() + _size,
-                             [](const Neighbor &a, const Neighbor &b) { return a.distance < b.distance; });
-            _size = new_size;
-        }
+        size_t new_size = top_k;
+        std::nth_element(_data.begin(), _data.begin() + new_size, _data.begin() + _size,
+                         [](const Neighbor &a, const Neighbor &b) { return a.distance < b.distance; });
+        _size = top_k;
     }
 
     void reset_cur()
@@ -196,17 +194,27 @@ class NeighborPriorityQueue
         }
     }
 
-    void prune_queue()
+    void prune_queue(size_t degree)
     {
         // Cut the queue in half by keeping only the first half.
-        size_t new_size = _size / 2;
-        _data.erase(_data.begin() + new_size, _data.begin() + _size);
+        size_t new_size = _size / degree;
+        //_data.erase(_data.begin() + new_size, _data.begin() + _size);
         _size = new_size;
     }
 
-    void reset_size(uint32_t new_size)
+    void reset_size(size_t new_size)
     {
         _size = new_size;
+    }
+
+    size_t get_cur()
+    {
+        return _cur;
+    }
+
+    size_t get_size()
+    {
+        return _size;
     }
 
   private:

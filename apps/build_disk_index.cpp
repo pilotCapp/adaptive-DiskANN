@@ -21,6 +21,7 @@ int main(int argc, char **argv)
     float B, M;
     bool append_reorder_data = false;
     bool use_opq = false;
+    std::vector<uint32_t> partition_dims;
 
     po::options_description desc{
         program_options_utils::make_program_description("build_disk_index", "Build a disk-based index.")};
@@ -78,6 +79,11 @@ int main(int argc, char **argv)
                                        "internally where each node has a maximum F labels.");
         optional_configs.add_options()("label_type", po::value<std::string>(&label_type)->default_value("uint"),
                                        program_options_utils::LABEL_TYPE_DESCRIPTION);
+        optional_configs.add_options()("partition_dims",
+                                       po::value<std::vector<uint32_t>>(&partition_dims)
+                                           ->multitoken()
+                                           ->default_value(std::vector<uint32_t>{0}, "0"),
+                                       program_options_utils::PARTITION_DIMS_TYPE_DESCRIPTION);
 
         // Merge required and optional parameters
         desc.add(required_configs).add(optional_configs);
@@ -141,6 +147,7 @@ int main(int argc, char **argv)
 
     try
     {
+
         if (label_file != "" && label_type == "ushort")
         {
             if (data_type == std::string("int8"))

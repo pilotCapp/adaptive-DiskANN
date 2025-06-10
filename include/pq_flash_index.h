@@ -16,7 +16,7 @@
 #include "tsl/robin_map.h"
 #include "tsl/robin_set.h"
 
-#define FULL_PRECISION_REORDER_MULTIPLIER 3
+#define FULL_PRECISION_REORDER_MULTIPLIER 10
 
 namespace diskann
 {
@@ -169,7 +169,11 @@ template <typename T, typename LabelT = uint32_t> class PQFlashIndex
     uint64_t _num_frozen_points = 0;
     uint64_t _frozen_location = 0;
     uint64_t _data_dim = 0;
+    uint64_t _pq_dim = 64;
+
     uint64_t _aligned_dim = 0;
+    uint64_t _aligned_pq_dim = 0;
+
     uint64_t _disk_bytes_per_point = 0; // Number of bytes
 
     std::string _disk_index_file;
@@ -186,6 +190,8 @@ template <typename T, typename LabelT = uint32_t> class PQFlashIndex
 
     // distance comparator
     std::shared_ptr<Distance<T>> _dist_cmp;
+    std::shared_ptr<Distance<T>> _dist_cmp_high;
+
     std::shared_ptr<Distance<float>> _dist_cmp_float;
 
     // for very large datasets: we use PQ even for the disk resident index

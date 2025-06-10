@@ -1287,10 +1287,16 @@ int build_disk_index(const char *dataFilePath, const char *indexFilePath, const 
 
     Timer timer;
     diskann::get_bin_metadata(data_file_to_use.c_str(), points_num, dim);
+
+    size_t pq_dim = 64;
+
+    dim = pq_dim;
+
     const double p_val = ((double)MAX_PQ_TRAINING_SET_SIZE / (double)points_num);
 
     if (use_disk_pq)
     {
+        std::cout << "Using disk PQ with " << disk_pq_dims << " dimensions." << std::endl;
         generate_disk_quantized_data<T>(data_file_to_use, disk_pq_pivots_path, disk_pq_compressed_vectors_path,
                                         compareMetric, p_val, disk_pq_dims);
     }

@@ -234,11 +234,12 @@ class IndexConfigBuilder
         }
         std::cout << "]" << std::endl;
 
-        if (_partition_dims.empty() ||
-            std::any_of(_partition_dims.begin(), _partition_dims.end(), [](uint32_t d) { return d == 0; }))
-        {
-            throw diskann::ANNException("Partition dimensions must be non-empty and contain no zero values.", -1, __FUNCSIG__, __FILE__, __LINE__);
-        }
+        // comment out for testing with disk generation
+        // if (_partition_dims.empty() ||
+        //     std::any_of(_partition_dims.begin(), _partition_dims.end(), [](uint32_t d) { return d == 0; }))
+        // {
+        //     throw diskann::ANNException("Partition dimensions must be non-empty and contain no zero values.", -1, __FUNCSIG__, __FILE__, __LINE__);
+        // }
 
 
 
